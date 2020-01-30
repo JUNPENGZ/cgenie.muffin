@@ -190,7 +190,8 @@ CONTAINS
         real,INTENT(inout)::dum_sed_mean_OM                              ! mean OM wt% in upper mixed layer
         real,INTENT(inout)::dum_sed_OM_wtpc_bot                     ! POC wt% at bottom of sediment column (geologic preservation)
 
-        ! local variables        
+        ! local variables      
+  	real::loc_BW_O2_concentration                               ! BW [O2] in muM = 10−6 mol/kg 
         real::loc_BW_O2_anoxia                                      ! BW [O2} threshold for zbio switch to 0.01cm 
         real::loc_total_POC_flux                                    ! total POC flux at SWI (POC1 + POC2) [mol/(cm^2 yr)]
         real::loc_POC1_flux_swi, loc_POC2_flux_swi                  ! POC flux at SWI [mol/(cm^2 yr)]
@@ -226,6 +227,11 @@ CONTAINS
         real::loc_sed_burial                                        ! burial rate (w) - corrected for porosity
         !        integer:: loc_k = 0
 
+        ! parameters for P-regeneration under anoxia, following Wallmann (2010)
+	real::loc_par_Pregen_Yf, loc_par_Pregen_r, loc_par_Pregen_A
+	real::loc_PO4_return_max					! maximum PO4 return flux from all Porg remineralized
+	real::loc_PO4_return_redox					! redox-dependent PO4 return flux 
+	real::loc_CP_reg						! C/P regeneration ratio as fct. of [O2]
 
         loc_sed_pres_insane = .false.
         loc_print_results = .false.
@@ -257,15 +263,25 @@ CONTAINS
         loc_par_bio_remin_POC_Ea1 = 55000.0
         loc_par_bio_remin_POC_Ea2 = 80000.0
 
+        ! set parameters for P-regeneration under anoxia, following Wallmann (2010) - TODO: change these to user-config parameters
+	loc_par_Pregen_Yf = 106.0			! C/P ratio under oxic conditions
+ 	loc_par_Pregen_r = 22.0
+	loc_par_Pregen_A = -95.0
+	loc_PO4_return_max = 0.0
+	loc_PO4_return_redox = 0.0
+	loc_CP_reg = 0.0
+
 !                   print*,' '
 !                   print*,'---------- IN OMEN MAIN ----------- '
 !                   print*,'dum_i, dum_j, dum_D ', dum_i, dum_j, dum_D
+!	print*,'dum_D ', dum_D
         ! initialize BW concentrations 
         !   THE FOLLOWING VALUES WILL BE PASSED DOWN FROM GENIE
         ! *****************************************************************
 
-        ! dum_sfcsumocn mol/kg -> SEDIMENT MODEL needs mol/cm^3
+        ! dum_sfcsumocn mol/kg -> SEDIMENT MODEL needs mol/cm^3, assuming 10^3 kg/m^3 as density of seawater
         dum_swiconc_O2 = dum_sfcsumocn(io_O2)*1e-3
+	loc_BW_O2_concentration = dum_sfcsumocn(io_O2)*1e+6		! BW [O2] in muM for calculating P-regeneration
         if(ocn_select(io_NO3))then
             dum_swiconc_NO3 = dum_sfcsumocn(io_NO3)*1e-3
             dum_swiconc_NH4 = dum_sfcsumocn(io_NH4)*1e-3
@@ -316,6 +332,7 @@ CONTAINS
             !            print*,'1/(1-por)*loc_new_sed(is_det) = ', 1/(1-por)*loc_new_sed(is_det)
 
             dum_sed_pres_fracC = 0.0        ! sed POC preservation to zero
+	    dum_sed_pres_fracP = 0.0
             dum_sed_OM_wtpc_bot = 0.0
             loc_O2_swiflux = conv_POC_cm3_mol*loc_fPOC*(-OC/SD)
             if(ocn_select(io_NO3))then
@@ -513,6 +530,7 @@ CONTAINS
                 !            print*,' grid point (i,j) ', dum_i, dum_j
                 !            print*,' '
                 dum_sed_pres_fracC = 0.0
+		dum_sed_pres_fracP = 0.0
                 dum_sed_OM_wtpc_bot = 0.0
                 loc_O2_swiflux = 0.0
                 loc_NO3_swiflux = 0.0
@@ -546,6 +564,7 @@ CONTAINS
                     !                print*,'loc_sed_burial', loc_sed_burial
                 
                     dum_sed_pres_fracC = 0.0        ! sed TOC preservation to zero
+		    dum_sed_pres_fracP = 0.0
                     dum_sed_OM_wtpc_bot = 0.0
                     loc_O2_swiflux = conv_POC_cm3_mol*loc_fPOC*(-OC/SD)
                     if(ocn_select(io_NO3))then
@@ -673,6 +692,41 @@ CONTAINS
 					! PO4 hack: remineralise just the non-sulfurised POC and calculate PO4 return flux
 		                        loc_PO4_swiflux = (loc_POC1_flux_swi+loc_POC2_flux_swi)*PC1/SD
 !		                        print*,'Sim P-loss PO4 = ', loc_PO4_swiflux
+					if(par_sed_huelse2017_sim_P_loss_pres_fracC)then	! preserve same fraction as Corg
+						loc_PO4_swiflux = loc_fPOC*conv_POC_cm3_mol*PC1/SD*(1-dum_sed_pres_fracC)
+!						print*,'pres_fracC'
+!						print*,'(1-dum_sed_pres_fracC) = ', (1-dum_sed_pres_fracC)
+!						print*,'loc_PO4_swiflux = ', loc_PO4_swiflux
+					end if
+					! simulate P-regeneration under anoxia:
+					if(par_sed_huelse2017_sim_P_regeneration)then
+!						print*,'simulate redox dependent P-regeneration'
+!						print*,'TOTAL POC3_flux   = ', loc_POC1_flux_swi+loc_POC2_flux_swi+loc_POC3_flux_swi
+!						print*,'loc_fPOC*conv_POC_cm3_mol, conv_POC_cm3_mol   = ', loc_fPOC*conv_POC_cm3_mol, conv_POC_cm3_mol
+!					    	print*,'Fraction POC-pres =' , dum_sed_pres_fracC
+!						print*,'loc_BW_O2_concentration =' , loc_BW_O2_concentration
+						if(loc_BW_O2_concentration .LE. const_real_nullsmall)then
+							! set C/P regeneration ratio under full anoxia
+							loc_CP_reg = loc_par_Pregen_Yf + loc_par_Pregen_A
+!							print*,'anoxic loc_CP_reg = ', loc_CP_reg
+						else
+							! calculate C/P regeneration ratio 
+							loc_CP_reg = loc_par_Pregen_Yf + loc_par_Pregen_A*exp(-loc_BW_O2_concentration/loc_par_Pregen_r)
+!							print*,'oxic loc_CP_reg = ', loc_CP_reg
+						end if
+						! calculate maximum return flux of PO4 from Porg in sediment cell
+						loc_PO4_return_max = loc_fPOC*conv_POC_cm3_mol*PC1/SD
+!						print*,'loc_PO4_return_max = ', loc_PO4_return_max
+						! calculate PO4 return flux using redox-dependent C/P ratio
+						loc_PO4_return_redox = loc_fPOC*conv_POC_cm3_mol*(1-dum_sed_pres_fracC)*1/loc_CP_reg
+!						print*,'loc_PO4_return_redox = ', loc_PO4_return_redox
+						! minimum of both is return ! TODO: Check for below zero!!
+						loc_PO4_swiflux = min(loc_PO4_return_max,loc_PO4_return_redox)
+!						print*,'loc_PO4_swiflux = ', loc_PO4_swiflux
+						dum_sed_pres_fracP = (loc_PO4_return_max-loc_PO4_swiflux)/loc_PO4_return_max
+!						print*,'dum_sed_pres_fracP = ', dum_sed_pres_fracP
+!						print*,''
+					end if
 				else								
 				        ! PO4 hack: remineralise all POC and calculate PO4 return flux
 				        loc_PO4_swiflux = loc_fPOC*conv_POC_cm3_mol*PC1/SD
@@ -689,8 +743,8 @@ CONTAINS
                     if(ocn_select(io_DIC))then
                         call sub_huelseetal2016_zDIC(dum_swiconc_DIC, loc_DIC_swiflux)
 !				print*,' '
-!				print*,'---------- loc_DIC_swiflux ----------', loc_DIC_swiflux
-!				print*,'HACK loc_DIC_swiflux = ', loc_new_sed(is_POC)*conv_POC_cm3_mol*DICC1/SD
+!				print*,'loc_DIC_swiflux =', loc_DIC_swiflux
+!				print*,'HACK loc_DIC_swiflux = ', loc_fPOC*conv_POC_cm3_mol*DICC1/SD*(1-dum_sed_pres_fracC)
 !                                    print*,'OMEN loc_POC_swiflux = ', conv_POC_cm3_mol*loc_fPOC
 !				loc_DIC_swiflux = loc_new_sed(is_POC)*conv_POC_cm3_mol*(1-dum_sed_pres_fracC) ! DIC HACK 
                     !                loc_DIC_swiflux = loc_new_sed(is_POC)*conv_POC_cm3_mol ! *SD   DIC HACK all returned
