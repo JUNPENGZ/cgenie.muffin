@@ -412,6 +412,9 @@ CONTAINS
        print*,'kinetic constant for FeOOH reduction                : ',par_bio_remin_kFeOOHtoFe2
        print*,'Fe fractionation factor for Fe reduction with S     : ',par_d56Fe_Fered_alpha
        print*,'S fractionation factor for S oxidation with Fe      : ',par_d34S_Fered_alpha
+       print*,'Maximum Fe:P ratio in FeOOH particles               : ',par_bio_rFeP_FeOOH_max
+       print*,'Pre-exponential factor for Kd of PO4-FeOOH          : ',par_bio_Kd_PO4_FeOOH_a
+       print*,'Exponent for Kd of PO4-FeOOH                        : ',par_bio_Kd_PO4_FeOOH_b
        ! --- I/O DIRECTORY DEFINITIONS ------------------------------------------------------------------------------------------- !
        print*,'--- I/O DIRECTORY DEFINITIONS ----------------------'
        print*,'(Paleo config) input dir. name                      : ',trim(par_pindir_name)

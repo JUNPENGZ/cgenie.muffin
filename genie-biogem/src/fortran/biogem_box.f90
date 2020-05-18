@@ -3616,6 +3616,30 @@ CONTAINS
                    end if
                 end if
 
+                ! *** Scavenge PO4 from water column onto FeOOH ***
+                ! NOTE: look for both 'free' and POM-associated forms
+                if (ocn_select(io_PO4) .AND. ocn_select(io_Fe2)) then
+                   if (sed_select(is_FeOOH)) then
+                      if (dum_vocn%mk(io2l(io_PO4),kk)>const_rns .AND. loc_bio_part_TMP(is2l(is_FeOOH),kk)>const_rns) then
+                         call sub_box_scav_PO4_FeOOH(              &
+                              & dum_vocn%mk(io2l(io_PO4),kk),      &
+                              & dum_vocn%mk(io2l(io_SiO2),kk),     &
+                              & loc_bio_part_TMP(:,kk),            &
+                              & loc_bio_remin(:,kk)                &
+                              & )
+                      end if
+                   elseif (sed_select(is_POM_FeOOH)) then
+                      if (dum_vocn%mk(io2l(io_PO4),kk)>const_rns .AND. loc_bio_part_TMP(is2l(is_POM_FeOOH),kk)>const_rns) then
+                         call sub_box_scav_PO4_POM_FeOOH(          &
+                              & dum_vocn%mk(io2l(io_PO4),kk),      &
+                              & dum_vocn%mk(io2l(io_SiO2),kk),     &
+                              & loc_bio_part_TMP(:,kk),            &
+                              & loc_bio_remin(:,kk)                &
+                              & )
+                      end if
+                  end if
+                end if
+
              end If
           end do
 
@@ -3856,6 +3880,122 @@ CONTAINS
     ! END
     ! -------------------------------------------------------- !
   end SUBROUTINE sub_box_react_POMFeOOH_H2S
+  ! ****************************************************************************************************************************** !
+  
+
+  ! ****************************************************************************************************************************** !
+  ! CALCULATE SCAVENGING OF PO4 ON FeOOH - [CTR|20200515]
+  ! NOTE: calling of this sub is conditional on both PO4 and 'free' FeOOH not being zero
+  !       (so divide-by-zero issues should already have been screened for ...)
+  SUBROUTINE sub_box_scav_PO4_FeOOH(dum_ocn_PO4,dum_ocn_SiO2,dum_bio_part,dum_bio_remin)
+    ! -------------------------------------------------------- !
+    ! DUMMY ARGUMENTS
+    ! -------------------------------------------------------- !
+    REAL,INTENT(in)::dum_ocn_PO4,dum_ocn_SiO2
+    real,dimension(n_sed),INTENT(inout)::dum_bio_part
+    real,dimension(n_ocn),INTENT(inout)::dum_bio_remin
+    ! -------------------------------------------------------- !
+    ! DEFINE LOCAL VARIABLES
+    ! -------------------------------------------------------- !
+    real::loc_PO4,loc_SiO2
+    real::loc_part_den_FeOOH
+    real::loc_Kd,loc_rFeP_FeOOH
+    real::loc_PO4_scavenging
+    ! -------------------------------------------------------- !
+    ! INITIALIZE LOCAL VARIABLES
+    ! -------------------------------------------------------- ! set local solutes
+    loc_PO4 = dum_ocn_PO4
+    if (ocn_select(io_SiO2)) then
+      loc_SiO2 = dum_ocn_SiO2
+    else
+      loc_SiO2 = 0.0
+    end if
+    ! -------------------------------------------------------- ! extract density of 'free' FeOOH
+    loc_part_den_FeOOH = dum_bio_part(is2l(is_FeOOH))
+    ! -------------------------------------------------------- !
+    ! PERFORM SCAVENGING of PO4 on 'free' FeOOH
+    ! -------------------------------------------------------- !
+    ! (1) estimate a Kd value based on dissolved Si 
+    ! (2) calculate the equilibrium Fe:P ratio in FeOOH
+    !     based on Kd = [P_FeOOH]/([PO4]*[FeOOH])
+    !     where P_FeOOH is adsorbed PO4
+    ! (3) establish instantaneous sorption equilibrium w/local FeOOH particles
+    !
+    ! estimate Kd based on dissolved Si
+    loc_Kd = par_bio_Kd_PO4_FeOOH_a*exp(par_bio_Kd_PO4_FeOOH_b*loc_SiO2)
+    ! calculate equilibrium Fe:P ratio for 'free' FeOOH
+    loc_rFeP_FeOOH = 1/(loc_Kd*loc_PO4)
+    ! ensure that this does not exceed a max ratio
+    loc_rFeP_FeOOH = min(loc_rFeP_FeOOH,par_bio_rFeP_FeOOH_max)
+    ! calculate PO4 scavenging based on sorption equilbrium with 'free' FeOOH
+    loc_PO4_scavenging = loc_part_den_FeOOH*(1/loc_rFeP_FeOOH)
+    ! ensure that this does not exceed locally available PO4
+    loc_PO4_scavenging = min(loc_PO4_scavenging,loc_PO4)
+    ! implement scavenging
+    dum_bio_remin(io2l(io_PO4)) = dum_bio_remin(io2l(io_PO4)) - loc_PO4_scavenging
+    ! -------------------------------------------------------- !
+    ! END
+    ! -------------------------------------------------------- !
+  end SUBROUTINE sub_box_scav_PO4_FeOOH
+  ! ****************************************************************************************************************************** !
+
+
+  ! ****************************************************************************************************************************** !
+  ! CALCULATE SCAVENGING OF PO4 ON POM-associated FeOOH - [CTR|20200515]
+  ! NOTE: calling of this sub is conditional on both PO4 and POM-associated FeOOH not being zero
+  !       (so divide-by-zero issues should already have been screened for ...)
+  ! NOTE: for now, this is simply an edited copy of sub_box_scav_PO4_FeOOH
+  !       -> a cleaner solution (not involving duplicating code) should be possible and implemented ... sometime ...
+  SUBROUTINE sub_box_scav_PO4_POM_FeOOH(dum_ocn_PO4,dum_ocn_SiO2,dum_bio_part,dum_bio_remin)
+    ! -------------------------------------------------------- !
+    ! DUMMY ARGUMENTS
+    ! -------------------------------------------------------- !
+    REAL,INTENT(in)::dum_ocn_PO4,dum_ocn_SiO2
+    real,dimension(n_sed),INTENT(inout)::dum_bio_part
+    real,dimension(n_ocn),INTENT(inout)::dum_bio_remin
+    ! -------------------------------------------------------- !
+    ! DEFINE LOCAL VARIABLES
+    ! -------------------------------------------------------- !
+    real::loc_PO4,loc_SiO2
+    real::loc_part_den_POM_FeOOH
+    real::loc_Kd,loc_rFeP_FeOOH
+    real::loc_PO4_scavenging
+    ! -------------------------------------------------------- !
+    ! INITIALIZE LOCAL VARIABLES
+    ! -------------------------------------------------------- ! set local solutes
+    loc_PO4 = dum_ocn_PO4
+    if (ocn_select(io_SiO2)) then
+      loc_SiO2 = dum_ocn_SiO2
+    else
+      loc_SiO2 = 0.0
+    end if
+    ! -------------------------------------------------------- ! extract density of POM-associated FeOOH
+    loc_part_den_POM_FeOOH = dum_bio_part(is2l(is_POM_FeOOH))
+    ! -------------------------------------------------------- !
+    ! PERFORM SCAVENGING of PO4 on POM-associated FeOOH
+    ! -------------------------------------------------------- !
+    ! (1) estimate a Kd value based on dissolved Si 
+    ! (2) calculate the equilibrium Fe:P ratio in FeOOH
+    !     based on Kd = [P_FeOOH]/([PO4]*[FeOOH])
+    !     where P_FeOOH is adsorbed PO4
+    ! (3) establish instantaneous sorption equilibrium w/local FeOOH particles
+    !
+    ! estimate Kd based on dissolved Si
+    loc_Kd = par_bio_Kd_PO4_FeOOH_a*exp(par_bio_Kd_PO4_FeOOH_b*loc_SiO2)
+    ! calculate equilibrium Fe:P ratio for POM-associated FeOOH
+    loc_rFeP_FeOOH = 1/(loc_Kd*loc_PO4)
+    ! ensure that this does not exceed a max ratio
+    loc_rFeP_FeOOH = min(loc_rFeP_FeOOH,par_bio_rFeP_FeOOH_max)
+    ! calculate PO4 scavenging based on sorption equilbrium with 'free' FeOOH
+    loc_PO4_scavenging = loc_part_den_POM_FeOOH*(1/loc_rFeP_FeOOH)
+    ! ensure that this does not exceed locally available PO4
+    loc_PO4_scavenging = min(loc_PO4_scavenging,loc_PO4)
+    ! implement scavenging
+    dum_bio_remin(io2l(io_PO4)) = dum_bio_remin(io2l(io_PO4)) - loc_PO4_scavenging
+    ! -------------------------------------------------------- !
+    ! END
+    ! -------------------------------------------------------- !
+  end SUBROUTINE sub_box_scav_PO4_POM_FeOOH
   ! ****************************************************************************************************************************** !
 
 

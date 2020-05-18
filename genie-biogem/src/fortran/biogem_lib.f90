@@ -569,6 +569,12 @@ MODULE biogem_lib
   NAMELIST /ini_biogem_nml/par_bio_FeS_abioticohm_min,par_bio_FeS_abioticohm_cte
   LOGICAL::ctrl_bio_FeS2precip_explicit                          ! Explicit FeS2 precip stiochiometry?
   NAMELIST /ini_biogem_nml/ctrl_bio_FeS2precip_explicit
+  real::par_bio_rFeP_FeOOH_max                                   ! Maximum Fe:P ratio in FeOOH particles
+  NAMELIST /ini_biogem_nml/par_bio_rFeP_FeOOH_max
+  real::par_bio_Kd_PO4_FeOOH_a                                   ! Pre-exponential factor for Kd of PO4-FeOOH
+  NAMELIST /ini_biogem_nml/par_bio_Kd_PO4_FeOOH_a
+  real::par_bio_Kd_PO4_FeOOH_b                                   ! Exponent for Kd of PO4-FeOOH
+  NAMELIST /ini_biogem_nml/par_bio_Kd_PO4_FeOOH_b
   ! ------------------- I/O DIRECTORY DEFINITIONS -------------------------------------------------------------------------------- !
   CHARACTER(len=255)::par_pindir_name                            !
   CHARACTER(len=255)::par_indir_name                             !
